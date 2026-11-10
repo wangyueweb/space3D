@@ -1,0 +1,19 @@
+{
+  "name": "space3d-starforge7",
+  "version": "1.0.0",
+  "description": "STARFORGE-7 星锻七号 — 单文件 photorealistic 3D 飞船网页，支持一键爆炸拆解与推进喷焰",
+  "scripts": {
+    "build": "node build.mjs",
+    "shot": "bash shot.sh"
+  },
+  "keywords": ["three.js", "3d", "spaceship", "exploded-view", "webgl"],
+  "author": "wangyueweb",
+  "license": "MIT",
+  "type": "commonjs",
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  },
+  "dependencies": {
+    "three": "^0.160.0"
+  }
+}

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>STARFORGE-7 · 星锻七号 — 交互式剖析模型</title>
+<style>
+  :root{
+    --cy:#5ff0ff; --cy-dim:#2a7d8c; --amber:#ffb43d; --ink:#04070d;
+    --glass:rgba(8,16,26,.72); --glass-hi:rgba(18,34,48,.82);
+    --line:rgba(95,240,255,.22); --line-hi:rgba(95,240,255,.55);
+    --txt:#cfe6f2; --txt-dim:#7f9bad;
+    --mono:'SF Mono',ui-monospace,'JetBrains Mono',Menlo,Consolas,monospace;
+    --sans:'PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{width:100%;height:100%;overflow:hidden;background:var(--ink);color:var(--txt);font-family:var(--sans)}
+  #scene{position:fixed;inset:0;width:100%;height:100%;display:block;cursor:grab}
+  #scene:active{cursor:grabbing}
+
+  /* ---------- 背景氛围 ---------- */
+  #vignette{position:fixed;inset:0;pointer-events:none;z-index:2;
+    background:
+      radial-gradient(120% 90% at 50% 45%,transparent 38%,rgba(2,4,9,.55) 100%),
+      linear-gradient(to bottom,rgba(2,5,10,.5),transparent 18%,transparent 82%,rgba(2,5,10,.62));
+  }
+  #scan{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:.16;
+    background:repeating-linear-gradient(to bottom,rgba(95,240,255,.09) 0 1px,transparent 1px 3px);
+    mix-blend-mode:screen;
+  }
+
+  /* ---------- UI 根 ---------- */
+  #ui{position:fixed;inset:0;z-index:10;pointer-events:none}
+  #ui>*{pointer-events:auto}
+  .panel{
+    background:linear-gradient(160deg,var(--glass-hi),var(--glass));
+    border:1px solid var(--line);border-radius:3px;
+    backdrop-filter:blur(14px) saturate(1.25);-webkit-backdrop-filter:blur(14px) saturate(1.25);
+    box-shadow:0 18px 50px -18px #000, inset 0 1px 0 rgba(255,255,255,.06);
+    position:relative;
+  }
+  .panel::before,.panel::after{content:'';position:absolute;width:9px;height:9px;border:1px solid var(--line-hi);pointer-events:none}
+  .panel::before{left:-1px;top:-1px;border-right:0;border-bottom:0}
+  .panel::after{right:-1px;bottom:-1px;border-left:0;border-top:0}
+
+  /* ---------- 顶部标题 ---------- */
+  #brand{position:fixed;left:26px;top:22px;z-index:11;pointer-events:none}
+  #brand .eyebrow{font-family:var(--mono);font-size:9.5px;letter-spacing:.42em;color:var(--cy);
+    text-transform:uppercase;opacity:.85;margin-bottom:7px;display:flex;align-items:center;gap:9px}
+  #brand .eyebrow::before{content:'';width:22px;height:1px;background:var(--cy);opacity:.7}
+  #brand h1{font-size:27px;font-weight:800;letter-spacing:.055em;line-height:1;
+    background:linear-gradient(100deg,#fff 10%,#bde9f5 45%,#5ff0ff 100%);
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    text-shadow:0 0 34px rgba(95,240,255,.28)}
+  #brand .sub{font-family:var(--mono);font-size:10px;letter-spacing:.2em;color:var(--txt-dim);margin-top:9px}
+  #brand .sub b{color:var(--amber);font-weight:600}
+
+  /* ---------- 右侧状态 ---------- */
+  #hud{position:fixed;right:26px;top:22px;z-index:11;text-align:right;pointer-events:none;font-family:var(--mono);font-size:10px;line-height:1.9;color:var(--txt-dim);letter-spacing:.1em}
+  #hud b{color:var(--cy);font-weight:600}
+  #hud .dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:#4dff9b;
+    box-shadow:0 0 8px #4dff9b;margin-right:6px;animation:pulse 2.1s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.32}}
+
+  /* ---------- 底部控制台 ---------- */
+  #dock{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:12;
+    display:flex;align-items:stretch;gap:0;padding:0;overflow:hidden}
+  #dock .grp{display:flex;flex-direction:column;gap:6px;padding:11px 14px;border-right:1px solid rgba(95,240,255,.13)}
+  #dock .grp:last-child{border-right:0}
+  #dock .grp-label{font-family:var(--mono);font-size:8.5px;letter-spacing:.26em;color:var(--txt-dim);text-transform:uppercase}
+  #dock .row{display:flex;gap:6px;align-items:center}
+  .btn{
+    font-family:var(--sans);font-size:12px;font-weight:600;letter-spacing:.04em;
+    color:var(--txt);background:rgba(255,255,255,.045);
+    border:1px solid rgba(95,240,255,.2);border-radius:2px;
+    padding:8px 14px;cursor:pointer;transition:.18s cubic-bezier(.3,.9,.3,1);
+    white-space:nowrap;position:relative;overflow:hidden;
+  }
+  .btn:hover{background:rgba(95,240,255,.13);border-color:var(--line-hi);color:#fff;transform:translateY(-1px)}
+  .btn:active{transform:translateY(0) scale(.985)}
+  .btn.on{background:linear-gradient(180deg,rgba(95,240,255,.28),rgba(95,240,255,.12));
+    border-color:var(--cy);color:#fff;box-shadow:0 0 20px -4px rgba(95,240,255,.6), inset 0 0 14px -6px var(--cy)}
+  .btn.primary{background:linear-gradient(180deg,rgba(255,180,61,.22),rgba(255,180,61,.06));border-color:rgba(255,180,61,.55);color:#ffd79a}
+  .btn.primary.on{background:linear-gradient(180deg,rgba(255,180,61,.42),rgba(255,120,20,.16));border-color:var(--amber);
+    color:#fff;box-shadow:0 0 26px -4px rgba(255,180,61,.75), inset 0 0 16px -6px var(--amber)}
+  #explodeRange{-webkit-appearance:none;appearance:none;width:104px;height:3px;border-radius:2px;
+    background:linear-gradient(90deg,var(--cy),rgba(95,240,255,.14));outline:0;cursor:pointer}
+  #explodeRange::-webkit-slider-thumb{-webkit-appearance:none;width:13px;height:13px;border-radius:50%;
+    background:#eafcff;border:1px solid var(--cy);box-shadow:0 0 12px var(--cy);cursor:grab}
+
+  /* ---------- 左侧零件清单 ---------- */
+  #side{position:fixed;left:26px;top:150px;bottom:120px;width:236px;z-index:11;display:flex;flex-direction:column}
+  #side .hd{padding:10px 13px;border-bottom:1px solid rgba(95,240,255,.14);
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.24em;color:var(--cy);text-transform:uppercase;
+    display:flex;justify-content:space-between;align-items:center}
+  #side .hd span{color:var(--txt-dim);letter-spacing:.06em}
+  #partList{overflow-y:auto;padding:8px;flex:1;scrollbar-width:thin;scrollbar-color:var(--cy-dim) transparent}
+  #partList::-webkit-scrollbar{width:4px}
+  #partList::-webkit-scrollbar-thumb{background:var(--cy-dim);border-radius:2px}
+  .pl-mod{margin-bottom:9px}
+  .pl-mod-name{font-family:var(--mono);font-size:9px;letter-spacing:.16em;color:var(--amber);
+    padding:4px 5px 5px;display:flex;justify-content:space-between;opacity:.95}
+  .pl-mod-name span{color:var(--txt-dim);letter-spacing:0}
+  .pl-item{display:flex;justify-content:space-between;align-items:center;gap:8px;width:100%;
+    font-family:var(--sans);font-size:11.5px;color:var(--txt);text-align:left;
+    background:transparent;border:0;border-left:1px solid rgba(95,240,255,.16);
+    padding:5px 7px;cursor:pointer;transition:.15s}
+  .pl-item i{font-family:var(--mono);font-size:8.5px;color:var(--txt-dim);font-style:normal;flex:none}
+  .pl-item:hover{background:rgba(95,240,255,.11);border-left-color:var(--cy);color:#fff;padding-left:11px}
+  .pl-more{font-family:var(--mono);font-size:9px;color:var(--txt-dim);padding:3px 7px;opacity:.7}
+
+  /* ---------- 信息卡 ---------- */
+  #infoCard{position:fixed;right:26px;bottom:120px;width:270px;z-index:12;padding:0;
+    opacity:0;transform:translateY(14px) scale(.97);transition:.28s cubic-bezier(.2,.9,.3,1);pointer-events:none}
+  #infoCard.show{opacity:1;transform:none;pointer-events:auto}
+  #infoCard .ic-title{padding:12px 14px 4px;font-size:15px;font-weight:700;color:#fff;letter-spacing:.03em}
+  #infoCard .ic-sub{padding:0 14px 10px;font-family:var(--mono);font-size:9px;letter-spacing:.16em;
+    color:var(--cy);border-bottom:1px solid rgba(95,240,255,.14)}
+  #infoCard .ic-grid{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:rgba(95,240,255,.1);margin:1px}
+  #infoCard .ic-grid>div{background:rgba(6,14,22,.9);padding:8px 10px;display:flex;flex-direction:column;gap:3px}
+  #infoCard .ic-grid i{font-family:var(--mono);font-size:8.5px;letter-spacing:.14em;color:var(--txt-dim);font-style:normal}
+  #infoCard .ic-grid b{font-family:var(--mono);font-size:11px;color:#e8f7ff;font-weight:600}
+  #infoCard .ic-grid b.ok{color:#4dff9b}
+  .ic-btn{display:block;width:calc(100% - 20px);margin:10px;padding:7px;font-size:11px;font-family:var(--sans);
+    color:var(--txt);background:rgba(255,255,255,.05);border:1px solid rgba(95,240,255,.22);
+    border-radius:2px;cursor:pointer;transition:.15s;letter-spacing:.06em}
+  .ic-btn:hover{background:rgba(95,240,255,.14);color:#fff;border-color:var(--cy)}
+
+  /* ---------- 3D 标注 ---------- */
+  #labels{position:fixed;inset:0;z-index:9;pointer-events:none;overflow:hidden}
+  .lbl{position:absolute;left:0;top:0;opacity:0;transition:opacity .3s;
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;color:#d9f7ff;
+    padding:3px 8px;background:rgba(4,14,22,.82);border:1px solid rgba(95,240,255,.42);
+    border-radius:2px;white-space:nowrap;pointer-events:auto;cursor:pointer;
+    transform-origin:0 0;margin:-9px 0 0 12px;backdrop-filter:blur(3px);
+    box-shadow:0 4px 14px -6px #000, 0 0 12px -4px var(--cy)}
+  .lbl:hover{background:rgba(95,240,255,.28);color:#fff;border-color:var(--cy)}
+
+  /* ---------- 加载层 ---------- */
+  #loading{position:fixed;inset:0;z-index:99;background:#03060c;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
+    transition:opacity .8s;font-family:var(--mono)}
+  #loading.done{opacity:0;pointer-events:none}
+  #loading .lg{font-size:12px;letter-spacing:.5em;color:var(--cy);text-transform:uppercase}
+  #loading .bar{width:230px;height:2px;background:rgba(95,240,255,.16);overflow:hidden;position:relative}
+  #loading .bar::after{content:'';position:absolute;inset:0;width:42%;background:linear-gradient(90deg,transparent,var(--cy),transparent);
+    animation:sweep 1.15s infinite ease-in-out}
+  @keyframes sweep{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
+  #loading .sm{font-size:9px;letter-spacing:.22em;color:var(--txt-dim)}
+
+  /* ---------- 提示 ---------- */
+  #hint{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);z-index:11;
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;color:var(--txt-dim);
+    pointer-events:none;opacity:.62;text-align:center}
+  #hint kbd{font-family:var(--mono);border:1px solid rgba(95,240,255,.3);border-radius:2px;
+    padding:1px 5px;color:var(--cy);font-size:9px}
+
+  @media (max-width:900px){
+    #side{display:none} #brand h1{font-size:19px} #hud{display:none}
+    #dock .grp{padding:8px 9px} .btn{padding:7px 9px;font-size:11px} #explodeRange{width:70px}
+    #infoCard{right:10px;left:10px;width:auto;bottom:130px}
+    #hint{display:none}
+  }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="vignette"></div>
+<div id="scan"></div>
+
+<div id="brand">
+  <div class="eyebrow">Deep Space Interceptor</div>
+  <h1>STARFORGE-7</h1>
+  <div class="sub">星锻七号 · 重型截击舰 &nbsp;|&nbsp; 舰体 <b>18.4m</b></div>
+</div>
+
+<div id="hud">
+  <div><span class="dot"></span>系统在线 · TELEMETRY</div>
+  <div>零件 <b id="statParts">0</b> · 网格 <b id="statMeshes">0</b></div>
+  <div>帧率 <b id="statFps">--</b> FPS</div>
+  <div id="modStatus" style="font-size:8.5px;opacity:.55;letter-spacing:.05em"></div>
+</div>
+
+<div id="side" class="panel">
+  <div class="hd">零件清单 <span>MANIFEST</span></div>
+  <div id="partList"></div>
+</div>
+
+<div id="infoCard" class="panel"></div>
+
+<div id="dock" class="panel">
+  <div class="grp">
+    <div class="grp-label">结构剖析</div>
+    <div class="row">
+      <button class="btn primary" id="btnExplode">⚡ 一键剖析</button>
+      <input type="range" id="explodeRange" min="0" max="1" step="0.01" value="0" title="剖析进度">
+    </div>
+  </div>
+  <div class="grp">
+    <div class="grp-label">推进系统</div>
+    <div class="row">
+      <button class="btn on" id="btnFlame">🔥 喷焰推进</button>
+    </div>
+  </div>
+  <div class="grp">
+    <div class="grp-label">视图</div>
+    <div class="row">
+      <button class="btn on" id="btnSpin">⟳ 环绕</button>
+      <button class="btn" id="btnWire">▦ 线框</button>
+      <button class="btn" id="btnReset">⌖ 复位</button>
+    </div>
+  </div>
+</div>
+
+<div id="hint">拖拽旋转 · 滚轮缩放 · 点击零件查看详情 · <kbd>空格</kbd> 剖析</div>
+<div id="labels"></div>
+
+<div id="loading">
+  <div class="lg">Starforge-7</div>
+  <div class="bar"></div>
+  <div class="sm">正在总装舰体结构…</div>
+</div>
+
+<!--APP_SCRIPT-->
+</body>
+</html>
